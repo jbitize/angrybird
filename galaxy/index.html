@@ -1343,11 +1343,11 @@ function update() {
       playPickup();
       const t = items[i].type;
       if (t === 'triple') {
-        activeWeapon = 'triple'; weaponTimer = 240;
+        activeWeapon = 'triple'; weaponTimer = 600;
       } else if (t === 'rapid') {
-        activeWeapon = 'rapid'; weaponTimer = 240;
+        activeWeapon = 'rapid'; weaponTimer = 600;
       } else if (t === 'laser') {
-        activeWeapon = 'laser'; laserActive = true; laserTimer = 120;
+        activeWeapon = 'laser'; laserActive = true; laserTimer = 300;
       } else if (t === 'homing') {
         fireHomingMissiles();
       } else if (t === 'shield') {
