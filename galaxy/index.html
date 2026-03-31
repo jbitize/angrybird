@@ -181,11 +181,14 @@ function stopBossBGM() {
 
 // ===== GAME STATE =====
 let ship, bullets, enemies, explosions, stars, items, enemyBullets, engineParticles;
+let homingMissiles;
 let score, gameOver, shootTimer, stage, killCount, killsForBoss;
 let boss, bossPhase; // bossPhase: 'none','active','dying','clear'
 let touchX = null;
-let tripleShot = false, tripleShotTimer = 0;
+let activeWeapon = 'normal'; // 'normal','triple','rapid','laser','homing'
+let weaponTimer = 0;
 let shield = false;
+let laserActive = false, laserTimer = 0;
 let screenShake = 0;
 let clearTimer = 0;
 let frame = 0;
@@ -213,9 +216,11 @@ function startGame() {
   ship = { x: W / 2, y: H - 80, w: 40, h: 44 };
   bullets = []; enemies = []; explosions = [];
   items = []; enemyBullets = []; engineParticles = [];
+  homingMissiles = [];
   touchX = null;
-  tripleShot = false; tripleShotTimer = 0;
-  shield = false; screenShake = 0; clearTimer = 0; frame = 0;
+  activeWeapon = 'normal'; weaponTimer = 0;
+  shield = false; laserActive = false; laserTimer = 0;
+  screenShake = 0; clearTimer = 0; frame = 0;
   spawnTimer = 0;
   stopBossBGM();
   createStars();
@@ -616,20 +621,28 @@ function updateExplosions() {
 }
 
 // Item drawing
+const ITEM_COLORS = {
+  triple: { glow: '#f44', bg: 'rgba(255,60,60,0.25)', fill: '#F44336', label: '3' },
+  rapid: { glow: '#f80', bg: 'rgba(255,140,0,0.25)', fill: '#FF9800', label: 'R' },
+  laser: { glow: '#ff0', bg: 'rgba(255,255,0,0.25)', fill: '#FFEB3B', label: 'L' },
+  homing: { glow: '#0f0', bg: 'rgba(0,255,0,0.25)', fill: '#4CAF50', label: 'H' },
+  shield: { glow: '#44f', bg: 'rgba(60,60,255,0.25)', fill: '#2196F3', label: 'S' },
+  bomb: { glow: '#c0f', bg: 'rgba(200,0,255,0.25)', fill: '#9C27B0', label: 'B' },
+};
 function drawItem(item) {
   ctx.save();
   ctx.translate(item.x, item.y);
   const pulse = 0.9 + Math.sin(frame * 0.1) * 0.1;
+  const c = ITEM_COLORS[item.type];
 
-  ctx.shadowColor = item.type === 'triple' ? '#f44' : '#44f';
+  ctx.shadowColor = c.glow;
   ctx.shadowBlur = 18;
-
-  ctx.fillStyle = item.type === 'triple' ? 'rgba(255,60,60,0.25)' : 'rgba(60,60,255,0.25)';
+  ctx.fillStyle = c.bg;
   ctx.beginPath();
   ctx.arc(0, 0, 16 * pulse, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = item.type === 'triple' ? '#F44336' : '#2196F3';
+  ctx.fillStyle = c.fill;
   ctx.beginPath();
   ctx.arc(0, 0, 10, 0, Math.PI * 2);
   ctx.fill();
@@ -638,7 +651,7 @@ function drawItem(item) {
   ctx.font = 'bold 12px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(item.type === 'triple' ? '3' : 'S', 0, 0);
+  ctx.fillText(c.label, 0, 0);
   ctx.shadowBlur = 0;
   ctx.restore();
 }
@@ -656,6 +669,159 @@ function drawShield() {
   ctx.arc(ship.x, ship.y, 30 * pulse, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+}
+
+// Homing missiles
+function drawHomingMissiles() {
+  homingMissiles.forEach(m => {
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    const angle = Math.atan2(m.vy, m.vx);
+    ctx.rotate(angle - Math.PI / 2);
+    // Missile body
+    ctx.fillStyle = '#4CAF50';
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(-3, 4);
+    ctx.lineTo(3, 4);
+    ctx.closePath();
+    ctx.fill();
+    // Flame
+    ctx.fillStyle = '#FF9800';
+    ctx.beginPath();
+    ctx.moveTo(-2, 4);
+    ctx.lineTo(0, 8 + Math.random() * 4);
+    ctx.lineTo(2, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // Smoke trail
+    if (frame % 2 === 0) {
+      explosions.push({
+        x: m.x, y: m.y, vx: (Math.random() - 0.5) * 0.5, vy: Math.random() * 1,
+        life: 0.5, size: 2 + Math.random() * 2, color: '#888', type: 'particle'
+      });
+    }
+  });
+}
+
+function updateHomingMissiles() {
+  for (let i = homingMissiles.length - 1; i >= 0; i--) {
+    const m = homingMissiles[i];
+    // Find closest target
+    let target = null, minDist = Infinity;
+    enemies.forEach(e => {
+      const d = Math.hypot(e.x - m.x, e.y - m.y);
+      if (d < minDist) { minDist = d; target = e; }
+    });
+    if (!target && boss && bossPhase === 'active') target = boss;
+    if (target) {
+      const dx = target.x - m.x, dy = target.y - m.y;
+      const dist = Math.hypot(dx, dy);
+      const turnSpeed = 0.12;
+      m.vx += (dx / dist) * turnSpeed;
+      m.vy += (dy / dist) * turnSpeed;
+      const spd = Math.hypot(m.vx, m.vy);
+      const maxSpd = 7;
+      if (spd > maxSpd) { m.vx = (m.vx / spd) * maxSpd; m.vy = (m.vy / spd) * maxSpd; }
+    }
+    m.x += m.vx; m.y += m.vy;
+    m.life--;
+    if (m.life <= 0 || m.y < -20 || m.y > H + 20 || m.x < -20 || m.x > W + 20) {
+      homingMissiles.splice(i, 1); continue;
+    }
+    // Hit enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (Math.hypot(m.x - e.x, m.y - e.y) < e.r + 6) {
+        createExplosion(e.x, e.y, e.color, 14);
+        playExplosion();
+        score++; killCount++;
+        if (Math.random() < 0.18) {
+          const types = ['triple','rapid','laser','homing','shield','bomb'];
+          items.push({ x: e.x, y: e.y, type: types[Math.floor(Math.random() * types.length)], speed: 2 });
+        }
+        enemies.splice(j, 1);
+        homingMissiles.splice(i, 1);
+        if (killCount >= killsForBoss && bossPhase === 'none') spawnBoss();
+        break;
+      }
+    }
+    // Hit boss
+    if (boss && bossPhase === 'active' && homingMissiles[i]) {
+      if (Math.hypot(m.x - boss.x, m.y - boss.y) < boss.r) {
+        boss.hp -= 3;
+        createExplosion(m.x, m.y, '#4CAF50', 8);
+        homingMissiles.splice(i, 1);
+        if (boss.hp <= 0) triggerBossDefeat();
+      }
+    }
+  }
+}
+
+// Laser beam
+function drawLaser() {
+  if (!laserActive) return;
+  ctx.save();
+  const lw = 8 + Math.sin(frame * 0.3) * 3;
+  // Outer glow
+  ctx.strokeStyle = 'rgba(255,255,0,0.3)';
+  ctx.lineWidth = lw + 16;
+  ctx.beginPath();
+  ctx.moveTo(ship.x, ship.y - ship.h / 2);
+  ctx.lineTo(ship.x, 0);
+  ctx.stroke();
+  // Inner beam
+  const grad = ctx.createLinearGradient(ship.x, ship.y, ship.x, 0);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(0.3, '#FFEB3B');
+  grad.addColorStop(1, '#FF9800');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.moveTo(ship.x, ship.y - ship.h / 2);
+  ctx.lineTo(ship.x, 0);
+  ctx.stroke();
+  // Core
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = lw * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(ship.x, ship.y - ship.h / 2);
+  ctx.lineTo(ship.x, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function updateLaser() {
+  if (!laserActive) return;
+  laserTimer--;
+  if (laserTimer <= 0) { laserActive = false; activeWeapon = 'normal'; return; }
+  const lw = 12;
+  // Hit enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (Math.abs(e.x - ship.x) < lw + e.r && e.y < ship.y) {
+      createExplosion(e.x, e.y, '#FFEB3B', 10);
+      playExplosion();
+      score++; killCount++;
+      if (Math.random() < 0.18) {
+        const types = ['triple','rapid','laser','homing','shield','bomb'];
+        items.push({ x: e.x, y: e.y, type: types[Math.floor(Math.random() * types.length)], speed: 2 });
+      }
+      enemies.splice(i, 1);
+      if (killCount >= killsForBoss && bossPhase === 'none') spawnBoss();
+    }
+  }
+  // Hit boss
+  if (boss && bossPhase === 'active') {
+    if (Math.abs(boss.x - ship.x) < lw + boss.r && boss.y > 0) {
+      if (frame % 3 === 0) {
+        boss.hp--;
+        createExplosion(ship.x + (Math.random()-0.5)*10, boss.y + boss.r * 0.5, '#FFEB3B', 4);
+        if (boss.hp <= 0) triggerBossDefeat();
+      }
+    }
+  }
 }
 
 // Stars
@@ -707,11 +873,14 @@ function drawHUD() {
   let effectY = 50;
   ctx.textAlign = 'left';
   ctx.font = 'bold 13px monospace';
-  if (tripleShot) {
-    ctx.fillStyle = '#F44336';
-    ctx.shadowColor = '#f44';
+  const weaponLabels = { triple: ['TRIPLE','#F44336'], rapid: ['RAPID','#FF9800'], laser: ['LASER','#FFEB3B'] };
+  if (activeWeapon !== 'normal' && weaponLabels[activeWeapon]) {
+    const [label, color] = weaponLabels[activeWeapon];
+    const t = activeWeapon === 'laser' ? laserTimer : weaponTimer;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
     ctx.shadowBlur = 6;
-    ctx.fillText(`TRIPLE ${Math.ceil(tripleShotTimer / 60)}s`, 12, effectY + 12);
+    ctx.fillText(`${label} ${Math.ceil(t / 60)}s`, 12, effectY);
     ctx.shadowBlur = 0;
     effectY += 18;
   }
@@ -723,6 +892,60 @@ function drawHUD() {
     ctx.shadowBlur = 0;
   }
   ctx.restore();
+}
+
+// Boss defeat helper
+function triggerBossDefeat() {
+  createBigExplosion(boss.x, boss.y);
+  playBigExplosion();
+  screenShake = 25;
+  score += 50;
+  stopBossBGM();
+  playStageClear();
+  bossPhase = 'clear';
+  clearTimer = 180;
+  boss = null;
+  msgEl.innerHTML = `STAGE ${stage} CLEAR!`;
+  msgEl.style.textShadow = '0 0 30px #0f0, 0 0 60px #0f0';
+  msgEl.style.color = '#0f0';
+  msgEl.style.display = 'block';
+}
+
+// Bomb effect
+function triggerBomb() {
+  playBigExplosion();
+  screenShake = 20;
+  // Kill all enemies on screen
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    createExplosion(enemies[i].x, enemies[i].y, enemies[i].color, 10);
+    score++; killCount++;
+  }
+  enemies = [];
+  // Clear enemy bullets
+  enemyBullets = [];
+  // Damage boss
+  if (boss && bossPhase === 'active') {
+    boss.hp -= 10;
+    createBigExplosion(boss.x, boss.y);
+    if (boss.hp <= 0) triggerBossDefeat();
+  }
+  // Screen flash
+  explosions.push({ x: W/2, y: H/2, vx: 0, vy: 0, life: 0.8, size: Math.max(W, H), color: '#fff', type: 'flash' });
+  if (killCount >= killsForBoss && bossPhase === 'none') spawnBoss();
+}
+
+// Spawn homing missiles
+function fireHomingMissiles() {
+  playPickup();
+  for (let i = 0; i < 4; i++) {
+    homingMissiles.push({
+      x: ship.x + (i < 2 ? -12 : 12),
+      y: ship.y - 10,
+      vx: (Math.random() - 0.5) * 3,
+      vy: -5,
+      life: 180
+    });
+  }
 }
 
 // Collision
@@ -742,7 +965,7 @@ let spawnTimer = 0;
 function spawnEnemy() {
   const r = Math.random() * 10 + 14;
   const colors = ['#66BB6A', '#26A69A', '#AB47BC', '#EC407A', '#7E57C2'];
-  const speedMult = 1 + (stage - 1) * 0.3;
+  const speedMult = 1.5 + (stage - 1) * 0.4;
   const color = colors[Math.floor(Math.random() * colors.length)];
   const x = Math.random() * (W - r * 2) + r;
 
@@ -842,19 +1065,31 @@ function update() {
   spawnEngineParticles();
   updateEngineParticles();
 
-  // Triple shot timer
-  if (tripleShot) { tripleShotTimer--; if (tripleShotTimer <= 0) tripleShot = false; }
+  // Weapon timer
+  if (activeWeapon !== 'normal' && activeWeapon !== 'laser') {
+    weaponTimer--;
+    if (weaponTimer <= 0) activeWeapon = 'normal';
+  }
+
+  // Laser update
+  updateLaser();
+
+  // Homing missiles update
+  updateHomingMissiles();
 
   // Auto shoot
+  const shootRate = activeWeapon === 'rapid' ? 4 : 12;
   shootTimer++;
-  if (shootTimer >= 12) {
+  if (shootTimer >= shootRate && !laserActive) {
     shootTimer = 0;
     playShoot();
     const bx = ship.x, by = ship.y - ship.h / 2;
-    if (tripleShot) {
+    if (activeWeapon === 'triple') {
       bullets.push({ x: bx, y: by, vx: 0, vy: -9 });
       bullets.push({ x: bx, y: by, vx: -2.8, vy: -8.5 });
       bullets.push({ x: bx, y: by, vx: 2.8, vy: -8.5 });
+    } else if (activeWeapon === 'rapid') {
+      bullets.push({ x: bx + (Math.random()-0.5)*6, y: by, vx: (Math.random()-0.5)*0.8, vy: -12 });
     } else {
       bullets.push({ x: bx, y: by, vx: 0, vy: -9 });
     }
@@ -895,8 +1130,14 @@ function update() {
   // Spawn enemies (not during boss)
   if (bossPhase === 'none') {
     spawnTimer++;
-    const baseRate = Math.max(12, 40 - stage * 5);
-    if (spawnTimer >= baseRate) { spawnTimer = 0; spawnEnemy(); }
+    const baseRate = Math.max(8, 25 - stage * 3);
+    if (spawnTimer >= baseRate) {
+      spawnTimer = 0;
+      spawnEnemy();
+      // Wave spawn: extra enemies at higher stages
+      if (Math.random() < 0.3 + stage * 0.1) spawnEnemy();
+      if (stage >= 3 && Math.random() < 0.2) spawnEnemy();
+    }
   }
 
   // Update enemies
@@ -959,8 +1200,9 @@ function update() {
       if (dx * dx + dy * dy < e.r * e.r) {
         createExplosion(e.x, e.y, e.color, 14);
         playExplosion();
-        if (Math.random() < 0.1) {
-          items.push({ x: e.x, y: e.y, type: Math.random() < 0.5 ? 'triple' : 'shield', speed: 2 });
+        if (Math.random() < 0.18) {
+          const types = ['triple','rapid','laser','homing','shield','bomb'];
+          items.push({ x: e.x, y: e.y, type: types[Math.floor(Math.random() * types.length)], speed: 2 });
         }
         bullets.splice(i, 1);
         enemies.splice(j, 1);
@@ -983,22 +1225,7 @@ function update() {
         boss.hp--;
         createExplosion(b.x, b.y, '#E040FB', 6);
         bullets.splice(i, 1);
-        if (boss.hp <= 0) {
-          // Boss defeated
-          createBigExplosion(boss.x, boss.y);
-          playBigExplosion();
-          screenShake = 25;
-          score += 50;
-          stopBossBGM();
-          playStageClear();
-          bossPhase = 'clear';
-          clearTimer = 180; // 3 seconds
-          boss = null;
-          msgEl.innerHTML = `STAGE ${stage} CLEAR!`;
-          msgEl.style.textShadow = '0 0 30px #0f0, 0 0 60px #0f0';
-          msgEl.style.color = '#0f0';
-          msgEl.style.display = 'block';
-        }
+        if (boss.hp <= 0) triggerBossDefeat();
       }
     }
   }
@@ -1114,11 +1341,19 @@ function update() {
     const dx = items[i].x - ship.x, dy = items[i].y - ship.y;
     if (dx * dx + dy * dy < 30 * 30) {
       playPickup();
-      if (items[i].type === 'triple') {
-        tripleShot = true;
-        tripleShotTimer = 240;
-      } else {
+      const t = items[i].type;
+      if (t === 'triple') {
+        activeWeapon = 'triple'; weaponTimer = 240;
+      } else if (t === 'rapid') {
+        activeWeapon = 'rapid'; weaponTimer = 240;
+      } else if (t === 'laser') {
+        activeWeapon = 'laser'; laserActive = true; laserTimer = 120;
+      } else if (t === 'homing') {
+        fireHomingMissiles();
+      } else if (t === 'shield') {
         shield = true;
+      } else if (t === 'bomb') {
+        triggerBomb();
       }
       items.splice(i, 1);
     }
@@ -1152,6 +1387,8 @@ function draw() {
     drawEngineParticles();
     drawShip();
     drawShield();
+    drawLaser();
+    drawHomingMissiles();
   }
 
   bullets.forEach(drawBullet);
