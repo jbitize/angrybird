@@ -37,6 +37,8 @@ canvas { display: block; touch-action: none; }
   text-shadow: 0 0 8px #0ff;
   box-shadow: 0 0 15px rgba(0,255,255,0.3);
   z-index: 20; display: none; cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
 }
 </style>
 </head>
@@ -790,9 +792,9 @@ function spawnBoss() {
 }
 
 // ===== INPUT =====
-function onTouchStart(e) { e.preventDefault(); if (e.touches.length > 0) touchX = e.touches[0].clientX; ensureAudio(); }
-function onTouchMove(e) { e.preventDefault(); if (e.touches.length > 0) touchX = e.touches[0].clientX; }
-function onTouchEnd(e) { e.preventDefault(); touchX = null; }
+function onTouchStart(e) { if (e.target === restartBtn) return; e.preventDefault(); if (e.touches.length > 0) touchX = e.touches[0].clientX; ensureAudio(); }
+function onTouchMove(e) { if (e.target === restartBtn) return; e.preventDefault(); if (e.touches.length > 0) touchX = e.touches[0].clientX; }
+function onTouchEnd(e) { if (e.target === restartBtn) return; e.preventDefault(); touchX = null; }
 
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => { mouseDown = true; touchX = e.clientX; ensureAudio(); });
