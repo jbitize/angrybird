@@ -18,7 +18,7 @@ html, body {
   overscroll-behavior: none;
   background: #000;
 }
-canvas { display: block; }
+canvas { display: block; touch-action: none; -webkit-touch-callout: none; }
 #ui {
   position: absolute; top: 10px; left: 0; right: 0;
   display: flex; justify-content: center; gap: 12px;
@@ -238,19 +238,25 @@ function updateScore() {
 
 // --- Input ---
 function getPos(e) {
-  const t = e.touches ? e.touches[0] : e;
-  return { x: t.clientX, y: t.clientY };
+  if (e.touches && e.touches.length > 0) {
+    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  if (e.changedTouches && e.changedTouches.length > 0) {
+    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  }
+  return { x: e.clientX, y: e.clientY };
 }
 
 function isNearBird(pos) {
   if (!currentBird || launched) return false;
   const dx = pos.x - currentBird.position.x;
   const dy = pos.y - currentBird.position.y;
-  return Math.sqrt(dx * dx + dy * dy) < 50 * SCALE;
+  return Math.sqrt(dx * dx + dy * dy) < 60 * SCALE;
 }
 
 function onDown(e) {
   e.preventDefault();
+  e.stopPropagation();
   if (gameOver) return;
   const pos = getPos(e);
   if (isNearBird(pos)) {
@@ -262,6 +268,7 @@ function onDown(e) {
 
 function onMove(e) {
   e.preventDefault();
+  e.stopPropagation();
   if (!dragging) return;
   dragCurrent = getPos(e);
   const maxDist = 100 * SCALE;
@@ -280,6 +287,7 @@ function onMove(e) {
 
 function onUp(e) {
   e.preventDefault();
+  e.stopPropagation();
   if (!dragging) return;
   dragging = false;
   const dx = dragStart.x - currentBird.position.x;
@@ -292,12 +300,22 @@ function onUp(e) {
   launchBird({ x: dx, y: dy });
 }
 
+// Prevent all default touch behavior on document
+document.addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
+document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+// Mouse events on canvas
 canvas.addEventListener('mousedown', onDown);
 canvas.addEventListener('mousemove', onMove);
 canvas.addEventListener('mouseup', onUp);
+
+// Touch events: start on canvas, move/end on document to not lose finger
 canvas.addEventListener('touchstart', onDown, { passive: false });
-canvas.addEventListener('touchmove', onMove, { passive: false });
-canvas.addEventListener('touchend', onUp, { passive: false });
+document.addEventListener('touchmove', onMove, { passive: false });
+document.addEventListener('touchend', onUp, { passive: false });
+document.addEventListener('touchcancel', onUp, { passive: false });
 window.addEventListener('resize', () => { /* soft resize - restart recommended */ });
 
 // --- Render ---
