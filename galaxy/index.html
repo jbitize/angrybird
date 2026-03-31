@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Galaxy Shooter</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+  background: #000;
+}
+canvas { display: block; touch-action: none; }
+#score {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  color: #0ff; font: bold 20px monospace;
+  text-shadow: 0 0 10px #0ff;
+  z-index: 10; pointer-events: none;
+}
+#message {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  color: #fff; font: bold 32px monospace;
+  text-shadow: 0 0 20px #f00;
+  z-index: 20; pointer-events: none; display: none;
+  text-align: center; line-height: 1.6;
+}
+#restartBtn {
+  position: absolute; top: 60%; left: 50%; transform: translateX(-50%);
+  font: bold 18px monospace; padding: 10px 24px;
+  background: rgba(0,255,255,0.2); color: #0ff;
+  border: 2px solid #0ff; border-radius: 8px;
+  z-index: 20; display: none; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="score">SCORE: 0</div>
+<div id="message"></div>
+<button id="restartBtn" onclick="startGame()">RESTART</button>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const msgEl = document.getElementById('message');
+const restartBtn = document.getElementById('restartBtn');
+
+let W, H;
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let ship, bullets, enemies, explosions, stars;
+let score, gameOver, shootTimer;
+let touchX = null;
+
+// Stars background
+function createStars() {
+  stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 2.5 + 0.5,
+      speed: Math.random() * 1.5 + 0.3,
+      twinkle: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function startGame() {
+  score = 0;
+  gameOver = false;
+  shootTimer = 0;
+  msgEl.style.display = 'none';
+  restartBtn.style.display = 'none';
+
+  ship = { x: W / 2, y: H - 80, w: 36, h: 40 };
+  bullets = [];
+  enemies = [];
+  explosions = [];
+  touchX = null;
+
+  createStars();
+  updateScore();
+}
+
+function updateScore() {
+  scoreEl.textContent = `SCORE: ${score}`;
+}
+
+// Ship drawing
+function drawShip() {
+  const { x, y, w, h } = ship;
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Engine glow
+  ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
+  ctx.beginPath();
+  ctx.arc(0, h * 0.4, w * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body
+  ctx.fillStyle = '#4FC3F7';
+  ctx.beginPath();
+  ctx.moveTo(0, -h / 2);           // nose
+  ctx.lineTo(-w / 2, h / 2);       // bottom-left
+  ctx.lineTo(-w * 0.15, h * 0.25); // inner-left
+  ctx.lineTo(0, h * 0.35);         // bottom-center
+  ctx.lineTo(w * 0.15, h * 0.25);  // inner-right
+  ctx.lineTo(w / 2, h / 2);        // bottom-right
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit
+  ctx.fillStyle = '#E0F7FA';
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.05, w * 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wing accents
+  ctx.strokeStyle = '#0288D1';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.35, h * 0.3);
+  ctx.lineTo(-w * 0.1, -h * 0.1);
+  ctx.moveTo(w * 0.35, h * 0.3);
+  ctx.lineTo(w * 0.1, -h * 0.1);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Enemy drawing
+function drawEnemy(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+
+  // Body
+  ctx.fillStyle = e.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, e.r * 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Eyes
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(-e.r * 0.3, -e.r * 0.15, e.r * 0.2, 0, Math.PI * 2);
+  ctx.arc(e.r * 0.3, -e.r * 0.15, e.r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(-e.r * 0.25, -e.r * 0.1, e.r * 0.1, 0, Math.PI * 2);
+  ctx.arc(e.r * 0.35, -e.r * 0.1, e.r * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// Bullet drawing
+function drawBullet(b) {
+  ctx.fillStyle = '#0ff';
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 8;
+  ctx.fillRect(b.x - 2, b.y - 6, 4, 12);
+  ctx.shadowBlur = 0;
+}
+
+// Explosion
+function createExplosion(x, y, color) {
+  for (let i = 0; i < 12; i++) {
+    const angle = (Math.PI * 2 / 12) * i;
+    const speed = Math.random() * 3 + 1.5;
+    explosions.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color: color || '#ff0'
+    });
+  }
+}
+
+function drawExplosions() {
+  explosions.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    const size = p.life * 4;
+    ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function updateExplosions() {
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const p = explosions[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.03;
+    if (p.life <= 0) explosions.splice(i, 1);
+  }
+}
+
+// Stars
+function drawStars() {
+  const time = Date.now() * 0.003;
+  stars.forEach(s => {
+    const alpha = 0.4 + 0.6 * Math.sin(time + s.twinkle);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  });
+}
+
+function updateStars() {
+  stars.forEach(s => {
+    s.y += s.speed;
+    if (s.y > H) {
+      s.y = 0;
+      s.x = Math.random() * W;
+    }
+  });
+}
+
+// Spawn enemies
+let spawnTimer = 0;
+function spawnEnemy() {
+  const r = Math.random() * 10 + 14;
+  const colors = ['#F44336', '#FF5722', '#FF9800', '#E91E63', '#9C27B0'];
+  enemies.push({
+    x: Math.random() * (W - r * 2) + r,
+    y: -r,
+    r: r,
+    speed: Math.random() * 1.5 + 1,
+    color: colors[Math.floor(Math.random() * colors.length)]
+  });
+}
+
+// Collision detection
+function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+  const closestX = Math.max(rx, Math.min(cx, rx + rw));
+  const closestY = Math.max(ry, Math.min(cy, ry + rh));
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  return (dx * dx + dy * dy) < (cr * cr);
+}
+
+// Touch input
+function onTouchStart(e) {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    touchX = e.touches[0].clientX;
+  }
+}
+
+function onTouchMove(e) {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    touchX = e.touches[0].clientX;
+  }
+}
+
+function onTouchEnd(e) {
+  e.preventDefault();
+  touchX = null;
+}
+
+// Mouse input (for desktop testing)
+let mouseDown = false;
+canvas.addEventListener('mousedown', e => { mouseDown = true; touchX = e.clientX; });
+canvas.addEventListener('mousemove', e => { if (mouseDown) touchX = e.clientX; });
+canvas.addEventListener('mouseup', () => { mouseDown = false; touchX = null; });
+
+document.addEventListener('touchstart', onTouchStart, { passive: false });
+document.addEventListener('touchmove', onTouchMove, { passive: false });
+document.addEventListener('touchend', onTouchEnd, { passive: false });
+document.addEventListener('touchcancel', onTouchEnd, { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+
+// Game loop
+function update() {
+  if (gameOver) return;
+
+  // Move ship toward touch
+  if (touchX !== null) {
+    const dx = touchX - ship.x;
+    const moveSpeed = 8;
+    if (Math.abs(dx) > 2) {
+      ship.x += dx > 0 ? Math.min(moveSpeed, dx) : Math.max(-moveSpeed, dx);
+    }
+  }
+  ship.x = Math.max(ship.w / 2, Math.min(W - ship.w / 2, ship.x));
+
+  // Auto shoot
+  shootTimer++;
+  if (shootTimer >= 12) {
+    shootTimer = 0;
+    bullets.push({ x: ship.x, y: ship.y - ship.h / 2 });
+  }
+
+  // Update bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    bullets[i].y -= 8;
+    if (bullets[i].y < -10) bullets.splice(i, 1);
+  }
+
+  // Spawn enemies
+  spawnTimer++;
+  const spawnRate = Math.max(20, 60 - score * 0.5);
+  if (spawnTimer >= spawnRate) {
+    spawnTimer = 0;
+    spawnEnemy();
+  }
+
+  // Update enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    enemies[i].y += enemies[i].speed;
+    if (enemies[i].y > H + 30) {
+      enemies.splice(i, 1);
+      continue;
+    }
+
+    // Enemy vs ship collision
+    const e = enemies[i];
+    if (e && circleRect(e.x, e.y, e.r, ship.x - ship.w / 2, ship.y - ship.h / 2, ship.w, ship.h)) {
+      createExplosion(ship.x, ship.y, '#0ff');
+      createExplosion(e.x, e.y, e.color);
+      gameOver = true;
+      msgEl.textContent = `GAME OVER\nSCORE: ${score}`;
+      msgEl.style.display = 'block';
+      restartBtn.style.display = 'block';
+      return;
+    }
+  }
+
+  // Bullet vs enemy collision
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      const dx = b.x - e.x;
+      const dy = b.y - e.y;
+      if (dx * dx + dy * dy < e.r * e.r) {
+        createExplosion(e.x, e.y, e.color);
+        bullets.splice(i, 1);
+        enemies.splice(j, 1);
+        score++;
+        updateScore();
+        break;
+      }
+    }
+  }
+
+  updateStars();
+  updateExplosions();
+}
+
+function draw() {
+  // Background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+
+  if (!gameOver) {
+    drawShip();
+  }
+
+  bullets.forEach(drawBullet);
+  enemies.forEach(drawEnemy);
+  drawExplosions();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+startGame();
+loop();
+</script>
+</body>
+</html>
