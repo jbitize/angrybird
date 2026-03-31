@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="screen-orientation" content="landscape">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><rect width='180' height='180' fill='%234FC3F7'/></svg>">
+<meta name="apple-mobile-web-app-title" content="Angry Bird">
 <title>Angry Bird</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
-  width: 100%; height: 100%;
+  width: 100%; height: 100dvh;
   overflow: hidden;
   touch-action: none;
   user-select: none;
@@ -17,8 +20,22 @@ html, body {
   -webkit-touch-callout: none;
   overscroll-behavior: none;
   background: #000;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
 }
 canvas { display: block; touch-action: none; -webkit-touch-callout: none; }
+#rotate-msg {
+  display: none;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #000; z-index: 9999;
+  flex-direction: column; align-items: center; justify-content: center;
+  color: #fff; font: bold 20px -apple-system, sans-serif;
+  text-align: center;
+}
+#rotate-msg .icon { font-size: 60px; margin-bottom: 16px; }
+@media screen and (orientation: portrait) {
+  #rotate-msg { display: flex; }
+}
 #ui {
   position: absolute; top: 10px; left: 0; right: 0;
   display: flex; justify-content: center; gap: 12px;
@@ -46,6 +63,11 @@ canvas { display: block; touch-action: none; -webkit-touch-callout: none; }
 </style>
 </head>
 <body>
+<div id="rotate-msg">
+  <div class="icon">📱↪️</div>
+  <div>기기를 가로로 돌려주세요</div>
+  <div style="font-size:14px;color:#aaa;margin-top:8px">Rotate your device to landscape</div>
+</div>
 <div id="ui">
   <div id="score">Birds: 3 | Pigs: 3</div>
   <button id="restartBtn" onclick="initGame()">Restart</button>
@@ -69,14 +91,32 @@ let birdsLeft, gameOver, launched, launchTime;
 let slingX, slingY, gameStartTime;
 
 function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
+  // Use visualViewport for accurate size on mobile Safari
+  if (window.visualViewport) {
+    W = window.visualViewport.width;
+    H = window.visualViewport.height;
+  } else {
+    W = window.innerWidth;
+    H = window.innerHeight;
+  }
   canvas.width = W;
   canvas.height = H;
   SCALE = Math.min(W / 800, H / 500);
   GROUND_Y = H - 40 * SCALE;
   slingX = 130 * SCALE;
   slingY = GROUND_Y - 20 * SCALE;
+}
+
+// Auto-hide Safari address bar by scrolling
+function hideAddressBar() {
+  setTimeout(() => { window.scrollTo(0, 1); }, 100);
+}
+
+// Listen to viewport changes (Safari toolbar show/hide)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    resize();
+  });
 }
 
 function initGame() {
@@ -325,7 +365,10 @@ canvas.addEventListener('touchstart', onDown, { passive: false });
 document.addEventListener('touchmove', onMove, { passive: false });
 document.addEventListener('touchend', onUp, { passive: false });
 document.addEventListener('touchcancel', onUp, { passive: false });
-window.addEventListener('resize', () => { /* soft resize - restart recommended */ });
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => { resize(); hideAddressBar(); }, 300);
+});
 
 // --- Render ---
 function drawBackground() {
@@ -637,6 +680,7 @@ function loop() {
 
 initGame();
 loop();
+hideAddressBar();
 </script>
 </body>
 </html>
