@@ -66,7 +66,7 @@ let W, H, GROUND_Y, SCALE;
 let engine, birds, pigs, blocks, ground, walls, sling;
 let currentBird, dragging, dragStart, dragCurrent;
 let birdsLeft, gameOver, launched, launchTime;
-let slingX, slingY;
+let slingX, slingY, gameStartTime;
 
 function resize() {
   W = window.innerWidth;
@@ -86,6 +86,7 @@ function initGame() {
   launched = false;
   dragging = false;
   launchTime = 0;
+  gameStartTime = Date.now();
 
   engine = Engine.create();
   engine.gravity.y = 1.2;
@@ -179,16 +180,24 @@ function launchBird(power) {
 }
 
 function onCollision(event) {
+  // Ignore collisions during initial physics settling
+  if (Date.now() - gameStartTime < 1500) return;
+
   event.pairs.forEach(pair => {
     const a = pair.bodyA;
     const b = pair.bodyB;
     const speed = Math.abs(pair.collision.depth) +
       Vector.magnitude(Vector.sub(a.velocity, b.velocity));
 
+    // Only damage pigs if a bird is involved, or if speed is very high (block crush)
+    const hasBird = a.label === 'bird' || b.label === 'bird';
+    const threshold = hasBird ? 3 : 8;
+    const killThreshold = hasBird ? 5 : 12;
+
     [a, b].forEach(body => {
-      if (body.label === 'pig' && speed > 3) {
+      if (body.label === 'pig' && speed > threshold) {
         body._damage = (body._damage || 0) + speed;
-        if (body._damage > 6) {
+        if (body._damage > killThreshold) {
           body._dead = true;
         }
       }
