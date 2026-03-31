@@ -66,9 +66,11 @@ resize();
 window.addEventListener('resize', resize);
 
 // Game state
-let ship, bullets, enemies, explosions, stars;
+let ship, bullets, enemies, explosions, stars, items;
 let score, gameOver, shootTimer;
 let touchX = null;
+let tripleShot = false, tripleShotTimer = 0;
+let shield = false;
 
 // Stars background
 function createStars() {
@@ -95,7 +97,11 @@ function startGame() {
   bullets = [];
   enemies = [];
   explosions = [];
+  items = [];
   touchX = null;
+  tripleShot = false;
+  tripleShotTimer = 0;
+  shield = false;
 
   createStars();
   updateScore();
@@ -259,6 +265,52 @@ function spawnEnemy() {
   });
 }
 
+// Item drawing
+function drawItem(item) {
+  ctx.save();
+  ctx.translate(item.x, item.y);
+
+  // Glow
+  ctx.shadowColor = item.type === 'triple' ? '#f44' : '#44f';
+  ctx.shadowBlur = 15;
+
+  // Outer circle
+  ctx.fillStyle = item.type === 'triple' ? 'rgba(255,60,60,0.3)' : 'rgba(60,60,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner circle
+  ctx.fillStyle = item.type === 'triple' ? '#F44336' : '#2196F3';
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Icon
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(item.type === 'triple' ? '3' : 'S', 0, 0);
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// Shield drawing
+function drawShield() {
+  if (!shield) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(100,180,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#4af';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.arc(ship.x, ship.y, 28, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Collision detection
 function circleRect(cx, cy, cr, rx, ry, rw, rh) {
   const closestX = Math.max(rx, Math.min(cx, rx + rw));
@@ -315,17 +367,30 @@ function update() {
   }
   ship.x = Math.max(ship.w / 2, Math.min(W - ship.w / 2, ship.x));
 
+  // Triple shot timer
+  if (tripleShot) {
+    tripleShotTimer--;
+    if (tripleShotTimer <= 0) tripleShot = false;
+  }
+
   // Auto shoot
   shootTimer++;
   if (shootTimer >= 12) {
     shootTimer = 0;
-    bullets.push({ x: ship.x, y: ship.y - ship.h / 2 });
+    if (tripleShot) {
+      bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vx: 0, vy: -8 });
+      bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vx: -2.5, vy: -7.6 });
+      bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vx: 2.5, vy: -7.6 });
+    } else {
+      bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vx: 0, vy: -8 });
+    }
   }
 
   // Update bullets
   for (let i = bullets.length - 1; i >= 0; i--) {
-    bullets[i].y -= 8;
-    if (bullets[i].y < -10) bullets.splice(i, 1);
+    bullets[i].x += bullets[i].vx;
+    bullets[i].y += bullets[i].vy;
+    if (bullets[i].y < -10 || bullets[i].x < -10 || bullets[i].x > W + 10) bullets.splice(i, 1);
   }
 
   // Spawn enemies
@@ -347,6 +412,13 @@ function update() {
     // Enemy vs ship collision
     const e = enemies[i];
     if (e && circleRect(e.x, e.y, e.r, ship.x - ship.w / 2, ship.y - ship.h / 2, ship.w, ship.h)) {
+      if (shield) {
+        // Shield absorbs hit
+        shield = false;
+        createExplosion(e.x, e.y, '#4af');
+        enemies.splice(i, 1);
+        continue;
+      }
       createExplosion(ship.x, ship.y, '#0ff');
       createExplosion(e.x, e.y, e.color);
       gameOver = true;
@@ -366,12 +438,38 @@ function update() {
       const dy = b.y - e.y;
       if (dx * dx + dy * dy < e.r * e.r) {
         createExplosion(e.x, e.y, e.color);
+        // 20% chance to drop item
+        if (Math.random() < 0.2) {
+          items.push({
+            x: e.x, y: e.y,
+            type: Math.random() < 0.5 ? 'triple' : 'shield',
+            speed: 2
+          });
+        }
         bullets.splice(i, 1);
         enemies.splice(j, 1);
         score++;
         updateScore();
         break;
       }
+    }
+  }
+
+  // Update items
+  for (let i = items.length - 1; i >= 0; i--) {
+    items[i].y += items[i].speed;
+    if (items[i].y > H + 20) { items.splice(i, 1); continue; }
+    // Pickup detection
+    const dx = items[i].x - ship.x;
+    const dy = items[i].y - ship.y;
+    if (dx * dx + dy * dy < 30 * 30) {
+      if (items[i].type === 'triple') {
+        tripleShot = true;
+        tripleShotTimer = 300; // 5 seconds at 60fps
+      } else {
+        shield = true;
+      }
+      items.splice(i, 1);
     }
   }
 
@@ -388,11 +486,34 @@ function draw() {
 
   if (!gameOver) {
     drawShip();
+    drawShield();
   }
 
   bullets.forEach(drawBullet);
   enemies.forEach(drawEnemy);
+  items.forEach(drawItem);
   drawExplosions();
+
+  // Active effects UI
+  if (!gameOver) {
+    let effectY = 40;
+    ctx.font = 'bold 14px monospace';
+    if (tripleShot) {
+      ctx.fillStyle = '#F44336';
+      ctx.shadowColor = '#f44';
+      ctx.shadowBlur = 6;
+      ctx.fillText(`TRIPLE ${Math.ceil(tripleShotTimer / 60)}s`, 12, effectY);
+      ctx.shadowBlur = 0;
+      effectY += 20;
+    }
+    if (shield) {
+      ctx.fillStyle = '#2196F3';
+      ctx.shadowColor = '#44f';
+      ctx.shadowBlur = 6;
+      ctx.fillText('SHIELD', 12, effectY);
+      ctx.shadowBlur = 0;
+    }
+  }
 }
 
 function loop() {
