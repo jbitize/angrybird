@@ -194,6 +194,7 @@ let clearTimer = 0;
 let frame = 0;
 let lives = 3;
 let invincible = 0; // invincibility frames after respawn
+let deathPause = 0; // freeze frames to show death
 let combo = 0, comboTimer = 0, maxCombo = 0;
 let comboDisplay = 0, comboDisplayTimer = 0; // for showing combo text
 let highScore = parseInt(localStorage.getItem('galaxyHighScore') || '0');
@@ -227,7 +228,7 @@ function startGame() {
   shield = false; laserActive = false; laserTimer = 0;
   screenShake = 0; clearTimer = 0; frame = 0;
   spawnTimer = 0;
-  lives = 3; invincible = 0;
+  lives = 3; invincible = 0; deathPause = 0;
   combo = 0; comboTimer = 0; maxCombo = 0;
   comboDisplay = 0; comboDisplayTimer = 0;
   stopBossBGM();
@@ -1066,9 +1067,10 @@ function playerHit() {
     restartBtn.style.display = 'block';
     return true; // dead
   }
-  // Respawn with invincibility
-  invincible = 120; // 2 seconds
-  ship.x = W / 2;
+  // Freeze + respawn with invincibility
+  deathPause = 90; // 1.5s freeze to show death
+  invincible = 300; // 5 seconds invincible after respawn
+  screenShake = 15;
   return false; // still alive
 }
 
@@ -1334,6 +1336,16 @@ document.addEventListener('gesturechange', e => e.preventDefault());
 function update() {
   if (gameOver) return;
   frame++;
+
+  // Death pause - freeze gameplay, show message
+  if (deathPause > 0) {
+    deathPause--;
+    updateExplosions(); // still show explosions during pause
+    if (deathPause <= 0) {
+      ship.x = W / 2; // respawn center after pause
+    }
+    return;
+  }
 
   // Stage clear transition
   if (bossPhase === 'clear') {
@@ -1715,6 +1727,26 @@ function draw() {
   drawExplosions();
 
   if (!gameOver) drawHUD();
+
+  // Death pause overlay
+  if (deathPause > 0) {
+    ctx.fillStyle = `rgba(255,0,0,${0.15 + Math.sin(frame * 0.3) * 0.1})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px monospace';
+    ctx.fillStyle = '#F44336';
+    ctx.shadowColor = '#f44';
+    ctx.shadowBlur = 20;
+    ctx.fillText('LIFE LOST', W / 2, H * 0.4);
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < lives; i++) {
+      ctx.fillText('\u2665', W / 2 - (lives - 1) * 14 + i * 28, H * 0.5);
+    }
+    ctx.restore();
+  }
 
   ctx.restore();
 }
