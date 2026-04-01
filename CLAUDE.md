@@ -22,7 +22,16 @@
 ### 4. Research Before Planning (if needed)
 - If a `research.md` file exists, read and understand it thoroughly before writing `plan.md`.
 
-### 5. Execution Order
+### 5. Test Before Deploy
+- After implementation, **ALWAYS** write and run test cases before `git push`.
+- Test cases should verify:
+  - JS syntax is valid (no parse errors)
+  - Key game functions and variables exist
+  - No duplicate variable declarations
+  - Game initializes without errors
+- Only push after all tests pass.
+
+### 6. Execution Order
 ```
-Interview (if needed) -> research.md review (if exists) -> plan.md -> User approval -> Implementation
+Interview (if needed) -> research.md review (if exists) -> plan.md -> User approval -> Implementation -> Test -> Deploy (git push)
 ```
