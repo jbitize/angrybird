@@ -135,8 +135,8 @@ body {
 </div>
 <div id="content" class="container" style="display:none">
   <div id="lang-switch" style="text-align:right;margin-bottom:16px;">
-    <button onclick="loadDoc('ko')" id="btn-ko" class="lang-btn active">한국어</button>
-    <button onclick="loadDoc('en')" id="btn-en" class="lang-btn">English</button>
+    <button onclick="loadDoc('ko',true)" id="btn-ko" class="lang-btn active">한국어</button>
+    <button onclick="loadDoc('en',true)" id="btn-en" class="lang-btn">English</button>
   </div>
   <div id="md" class="md"></div>
 </div>
@@ -163,10 +163,22 @@ renderer.heading = function({ tokens, depth }) {
 
 marked.setOptions({ renderer, gfm: true, breaks: false });
 
-function loadDoc(lang) {
+function getLangFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const lang = params.get('lang');
+  return (lang === 'en') ? 'en' : 'ko';
+}
+
+function loadDoc(lang, pushState) {
   currentLang = lang;
   document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('btn-' + lang).classList.add('active');
+  document.documentElement.lang = lang;
+
+  if (pushState) {
+    const url = lang === 'ko' ? './' : '?lang=en';
+    history.pushState({ lang }, '', url);
+  }
 
   document.getElementById('loading').style.display = 'flex';
   document.getElementById('content').style.display = 'none';
@@ -188,7 +200,8 @@ function loadDoc(lang) {
     });
 }
 
-loadDoc('ko');
+window.addEventListener('popstate', () => loadDoc(getLangFromURL(), false));
+loadDoc(getLangFromURL(), false);
 </script>
 </body>
 </html>
