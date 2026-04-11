@@ -104,6 +104,20 @@ body {
 .md tbody tr:nth-child(even) { background: var(--table-row); }
 /* Emoji fix */
 .md td:has(> text) { text-align: center; }
+/* Language switch */
+.lang-btn {
+  font: 600 14px -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.2s;
+}
+.lang-btn:hover { border-color: var(--link); color: var(--link); }
+.lang-btn.active { background: var(--link); color: #000; border-color: var(--link); }
 /* Responsive */
 @media (max-width: 600px) {
   .container { padding: 16px 14px 60px; }
@@ -120,14 +134,21 @@ body {
   <span>Loading...</span>
 </div>
 <div id="content" class="container" style="display:none">
+  <div id="lang-switch" style="text-align:right;margin-bottom:16px;">
+    <button onclick="loadDoc('ko')" id="btn-ko" class="lang-btn active">한국어</button>
+    <button onclick="loadDoc('en')" id="btn-en" class="lang-btn">English</button>
+  </div>
   <div id="md" class="md"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
 <script>
-const MD_FILE = 'gdc-opportunities-for-high-school-students.md';
+const FILES = {
+  ko: 'gdc-opportunities-for-high-school-students.md',
+  en: 'gdc-opportunities-for-high-school-students-en.md'
+};
+let currentLang = 'ko';
 
-// Custom renderer for anchor IDs on headings
 const renderer = new marked.Renderer();
 renderer.heading = function({ tokens, depth }) {
   const text = this.parser.parseInline(tokens);
@@ -140,31 +161,34 @@ renderer.heading = function({ tokens, depth }) {
   return `<h${depth} id="${id}">${text}</h${depth}>`;
 };
 
-marked.setOptions({
-  renderer,
-  gfm: true,
-  breaks: false
-});
+marked.setOptions({ renderer, gfm: true, breaks: false });
 
-fetch(MD_FILE)
-  .then(res => {
-    if (!res.ok) throw new Error('Failed to load');
-    return res.text();
-  })
-  .then(md => {
-    document.getElementById('md').innerHTML = marked.parse(md);
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
-    // Scroll to hash if present
-    if (location.hash) {
-      const el = document.querySelector(location.hash);
-      if (el) el.scrollIntoView();
-    }
-  })
-  .catch(err => {
-    document.getElementById('loading').innerHTML =
-      `<span style="color:#f85149">Failed to load document. <a href="${MD_FILE}" style="color:#58a6ff">View raw file</a></span>`;
-  });
+function loadDoc(lang) {
+  currentLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + lang).classList.add('active');
+
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('content').style.display = 'none';
+
+  fetch(FILES[lang])
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load');
+      return res.text();
+    })
+    .then(md => {
+      document.getElementById('md').innerHTML = marked.parse(md);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+      window.scrollTo(0, 0);
+    })
+    .catch(err => {
+      document.getElementById('loading').innerHTML =
+        `<span style="color:#f85149">Failed to load document. <a href="${FILES[lang]}" style="color:#58a6ff">View raw file</a></span>`;
+    });
+}
+
+loadDoc('ko');
 </script>
 </body>
 </html>
